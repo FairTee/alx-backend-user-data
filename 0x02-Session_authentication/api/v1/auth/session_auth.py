@@ -1,76 +1,54 @@
 #!/usr/bin/env python3
 """
-Module for authentication using Session auth
+Module for SessionExpAuth class
 """
 
-
-from .auth import Auth
-
-from models.user import User
-from uuid import uuid4
+import os
+from datetime import datetime, timedelta
+from api.v1.auth.session_auth import SessionAuth
 
 
-class SessionAuth(Auth):
-    """_summary_
-    """
-    user_id_by_session_id = {}
+class SessionExpAuth(SessionAuth):
+    """SessionExpAuth class that adds session expiration"""
 
-    def create_session(self, user_id: str = None) -> str:
-        """_summary_
+    def __init__(self):
+        """Initialize SessionExpAuth with session duration"""
+        super().__init__()
+        try:
+            self.session_duration = int(os.getenv('SESSION_DURATION', 0))
+        except ValueError:
+            self.session_duration = 0
 
-        Args:
-            user_id (str, optional): _description_. Defaults to None.
-
-        Returns:
-            str: _description_
-        """
-        if user_id is None or not isinstance(user_id, str):
+    def create_session(self, user_id=None):
+        """Create a session with an expiration time"""
+        session_id = super().create_session(user_id)
+        if not session_id:
             return None
 
-        id = uuid4()
-        self.user_id_by_session_id[str(id)] = user_id
-        return str(id)
+        session_dict = {
+            "user_id": user_id,
+            "created_at": datetime.now()
+        }
+        self.user_id_by_session_id[session_id] = session_dict
+        return session_id
 
-    def user_id_for_session_id(self, session_id: str = None) -> str:
-        """_summary_
-
-        Args:
-            session_id (str, optional): _description_. Defaults to None.
-
-        Returns:
-                str: _description_
-        """
-        if session_id is None or not isinstance(session_id, str):
+    def user_id_for_session_id(self, session_id=None):
+        """Get user_id based on session_id with expiration check"""
+        if session_id is None:
             return None
-        return self.user_id_by_session_id.get(session_id)
 
-    def current_user(self, request=None):
-        """_summary_
+        session_dict = self.user_id_by_session_id.get(session_id)
+        if session_dict is None:
+            return None
 
-        Args:
-            request (_type_, optional): _description_. Defaults to None.
-        """
-        session_cookie = self.session_cookie(request)
-        user_id = self.user_id_for_session_id(session_cookie)
-        user = User.get(user_id)
-        return user
+        if self.session_duration <= 0:
+            return session_dict.get("user_id")
 
-    def destroy_session(self, request=None):
-        """_summary_
+        if "created_at" not in session_dict:
+            return None
 
-        Args:
-            request (_type_, optional): _description_. Defaults to None.
+        created_at = session_dict.get("created_at")
+        if created_at + timedelta(seconds=self.session_duration) < datetime.now():
+            return None
 
-        Returns:
-            _type_: _description_
-        """
-        if request is None:
-            return False
-        session_cookie = self.session_cookie(request)
-        if session_cookie is None:
-            return False
-        user_id = self.user_id_for_session_id(session_cookie)
-        if user_id is None:
-            return False
-        del self.user_id_by_session_id[session_cookie]
-        return True
+        return session_dict.get("user_id")

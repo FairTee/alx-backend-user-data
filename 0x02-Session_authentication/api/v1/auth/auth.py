@@ -1,80 +1,43 @@
 #!/usr/bin/env python3
 """
-Module for authentication
+Module for Flask app
 """
+from os import getenv
+from flask import Flask, jsonify
+from api.v1.views import app_views
+from api.v1.auth.auth import Auth
+from api.v1.auth.session_auth import SessionAuth
+from api.v1.auth.session_exp_auth import SessionExpAuth
 
+app = Flask(__name__)
+app.register_blueprint(app_views)
 
-from typing import List, TypeVar
-from flask import request
-import os
+auth = None
+if getenv('AUTH_TYPE') == 'session_exp_auth':
+    auth = SessionExpAuth()
 
+@app.before_request
+def before_request():
+    """Method to handle before request actions"""
+    if auth is not None:
+        request.current_user = auth.current_user(request)
 
-class Auth:
-    """_summary_
-    """
+@app.errorhandler(404)
+def not_found(error):
+    """Handler for 404 errors"""
+    return jsonify({"error": "Not found"}), 404
 
-    def require_auth(self, path: str, excluded_paths: List[str]) -> bool:
-        """_summary_
+@app.errorhandler(401)
+def unauthorized(error):
+    """Handler for 401 errors"""
+    return jsonify({"error": "Unauthorized"}), 401
 
-        Args:
-            path (str): _description_
-            excluded_paths (List[str]): _description_
+@app.errorhandler(403)
+def forbidden(error):
+    """Handler for 403 errors"""
+    return jsonify({"error": "Forbidden"}), 403
 
-        Returns:
-                        bool: _description_
-        """
-        if path is None:
-            return True
-
-        if excluded_paths is None or excluded_paths == []:
-            return True
-
-        if path in excluded_paths:
-            return False
-
-        for excluded_path in excluded_paths:
-            if excluded_path.startswith(path):
-                return False
-            elif path.startswith(excluded_path):
-                return False
-            elif excluded_path[-1] == "*":
-                if path.startswith(excluded_path[:-1]):
-                    return False
-
-        return True
-
-    def authorization_header(self, request=None) -> str:
-        """_summary_
-
-        Args:
-            request (_type_, optional): _description_. Defaults to None.
-
-        Returns:
-                        str: _description_
-        """
-        if request is None:
-            return None
-        # get header from the request
-        header = request.headers.get('Authorization')
-
-        if header is None:
-            return None
-
-        return header
-
-    def current_user(self, request=None) -> TypeVar('User'):
-        """_summary_
-        """
-
-        return None
-
-    def session_cookie(self, request=None):
-        """_summary_
-
-        Args:
-            request (_type_, optional): _description_. Defaults to None.
-        """
-        if request is None:
-            return None
-        session_name = os.getenv('SESSION_NAME')
-        return request.cookies.get(session_name)
+if __name__ == "__main__":
+    host = getenv("API_HOST", "0.0.0.0")
+    port = int(getenv("API_PORT", "5000"))
+    app.run(host=host, port=port)
